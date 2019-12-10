@@ -89,7 +89,7 @@ public class TemplateCodeGenerator extends AbstractCodeGenerator {
      * @see com.baidu.bjf.remoting.protobuf.code.ICodeGenerator#getCode()
      */
     @Override
-    public String getCode() {
+    public Code getCode() {
 
         String pkg = getPackage();
         if (!StringUtils.isEmpty(pkg)) {
@@ -124,7 +124,7 @@ public class TemplateCodeGenerator extends AbstractCodeGenerator {
         } catch (IOException e) {
             throw new RuntimeException(e.getMessage(), e);
         }
-        return writer.toString();
+        return Code.stringCode(writer.toString());
     }
 
     /**

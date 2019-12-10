@@ -30,7 +30,7 @@ public class CodePrinter {
      * @param code code in string
      * @param desc code description
      */
-    public static void printCode(String code, String desc) {
+    public static void printCode(Object code, String desc) {
         System.out.println("--------------------------" + desc + " begin--------------------------");
         System.out.println(code);
         System.out.println("--------------------------" + desc + " end--------------------------");

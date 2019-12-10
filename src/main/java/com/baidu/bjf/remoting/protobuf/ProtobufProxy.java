@@ -19,11 +19,23 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.net.URISyntaxException;
+import java.net.URL;
 import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.LinkedList;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Function;
 
+import com.baidu.bjf.remoting.protobuf.annotation.IVersion;
+import com.baidu.bjf.remoting.protobuf.code.Code;
+import com.baidu.bjf.remoting.protobuf.code.test.testCodeGenerator;
+import com.sun.org.apache.xalan.internal.xsltc.compiler.util.TestGenerator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -74,9 +86,26 @@ public final class ProtobufProxy {
 
     /** The Constant OUTPUT_PATH for target directory to create generated source code out. */
     public static final ThreadLocal<Boolean> CACHE_ENABLED = new ThreadLocal<Boolean>();
-    
+
     /** The Constant for debug control from environment. */
-    private static final String DEBUG_CONTROL = "X_DEBUG_ENABLE"; 
+    private static final String DEBUG_CONTROL = "X_DEBUG_ENABLE";
+
+    public static Function<Class, ICodeGenerator> generatorFunction;
+    public static final ThreadLocal<Long> CACHE_VERSION = new ThreadLocal<>();
+
+    static {
+        if ("asm".equalsIgnoreCase(System.getProperty("jprotobuf.defaultGenerator"))) {
+            generatorFunction = testCodeGenerator::new;
+        } else {
+            generatorFunction = TemplateCodeGenerator::new;
+        }
+        String path = System.getProperty("jprotobuf.outpath");
+        if (!StringUtils.isEmpty(path)) {
+            OUTPUT_PATH.set(new File(path));
+        }
+        ProtobufProxy.DEBUG_CONTROLLER.set(Boolean.valueOf(System.getProperty("jprotobuf.debug", "false")));
+    }
+
 
     /**
      * Enable cache.
@@ -107,10 +136,11 @@ public final class ProtobufProxy {
      * @return true, if is debug enabled
      */
     public static boolean isDebugEnabled() {
-        String debugEnv = System.getenv(DEBUG_CONTROL);
-        if (debugEnv != null && Boolean.parseBoolean(debugEnv)) {
-            return true;
-        }
+        //====kevins
+//        String debugEnv = System.getenv(DEBUG_CONTROL);
+//        if (debugEnv != null && Boolean.parseBoolean(debugEnv)) {
+//            return true;
+//        }
         
         Boolean debug = DEBUG_CONTROLLER.get();
         if (debug == null) {
@@ -152,7 +182,7 @@ public final class ProtobufProxy {
         if (charset == null) {
             charset = Charset.defaultCharset();
         }
-        String code = codeGenerator.getCode();
+        Code code = codeGenerator.getCode();
 
         os.write(code.getBytes(charset));
     }
@@ -252,13 +282,13 @@ public final class ProtobufProxy {
                 return codec;
             }
         }
-        
-        String className = getFullClassName(cls);
-        Codec<T> codec = loadCompiledClass(uniClsName, className);
-        if (codec != null) {
-            return codec;
-        }
-        
+
+//        String className = getFullClassName(cls);
+//        Codec<T> codec = loadCompiledClass(uniClsName, className);
+//        if (codec != null) {
+//            return codec;
+//        }
+//
         return create(cls, debug, path, null, getCodeGenerator(cls));
     }
     
@@ -348,96 +378,98 @@ public final class ProtobufProxy {
 
         // try to load first
         String className = cg.getFullClassName();
-        Codec<T> codec = loadCompiledClass(uniClsName, className);
+
+
+        Codec<T> codec = loadCompiledClass(cls, uniClsName, className);
         if (codec != null) {
             return codec;
-        }
+        } else {
+            Code code = cg.getCode();
 
-        String code = cg.getCode();
-        
-        if (debug) {
-            String printCode = code;
-            CodePrinter.printCode(printCode, "generate protobuf proxy code");
-        }
-
-        FileOutputStream fos = null;
-        if (path != null && path.isDirectory()) {
-            String pkg = "";
-            if (className.indexOf('.') != -1) {
-                pkg = StringUtils.substringBeforeLast(className, ".");
+            if (debug) {
+                CodePrinter.printCode(code.getCode(), "generate protobuf proxy code");
             }
 
-            // mkdirs
-            String dir = path + File.separator + pkg.replace('.', File.separatorChar);
-            File f = new File(dir);
-            f.mkdirs();
-
-            try {
-                fos = new FileOutputStream(new File(f, cg.getClassName() + ".class"));
-            } catch (Exception e) {
-                throw new RuntimeException(e.getMessage(), e);
-            }
-
-        }
-
-        if (compiler == null) {
-            compiler = JDKCompilerHelper.getJdkCompiler();
-        }
-        Class<?> newClass;
-
-        // get last modify time
-        long lastModify = ClassHelper.getLastModifyTime(cls);
-
-        try {
-            newClass = compiler.compile(className, code, cls.getClassLoader(), fos, lastModify);
-        } catch (Exception e) {
-            compiler = JDKCompilerHelper.getJdkCompiler(cls.getClassLoader());
-            newClass = compiler.compile(className, code, cls.getClassLoader(), fos, lastModify);
-        }
-
-        if (fos != null) {
-            try {
-                fos.close();
-            } catch (IOException e) {
-                throw new RuntimeException(e.getMessage(), e);
-            }
-        }
-
-        try {
-            Codec<T> newInstance = (Codec<T>) newClass.newInstance();
-            if (!CACHED.containsKey(uniClsName)) {
-                CACHED.put(uniClsName, newInstance);
-            }
-
-            try {
-                // try to eagle load
-                Set<Class<?>> relativeProxyClasses = cg.getRelativeProxyClasses();
-                for (Class<?> relativeClass : relativeProxyClasses) {
-                    ProtobufProxy.create(relativeClass, debug, path, compiler, cg);
+            FileOutputStream fos = null;
+            if (path != null && path.isDirectory()) {
+                String pkg = "";
+                if (className.indexOf('.') != -1) {
+                    pkg = StringUtils.substringBeforeLast(className, ".");
                 }
-            } catch (Exception e) {
-                if (LOGGER.isDebugEnabled()) {
-                    LOGGER.debug(e.getMessage(), e);
+
+                // mkdirs
+                String dir = path + File.separator + pkg.replace('.', File.separatorChar);
+                File f = new File(dir);
+                f.mkdirs();
+
+                if (debug && code.getCodeType() == Code.CodeType.STRING_CODE) {
+                    File javaFile = new File(f, cg.getClassName() + ".java");
+                    try {
+                        Files.write(javaFile.toPath(), String.valueOf(code.getCode()).getBytes(StandardCharsets.UTF_8));
+                    } catch (IOException e) {
+                        e.printStackTrace();
+                    }
+                }
+
+                try {
+                    File file = new File(f, cg.getClassName() + ".class");
+                    Files.deleteIfExists(file.toPath());
+                    fos = new FileOutputStream(file);
+                } catch (Exception e) {
+                    throw new RuntimeException(e.getMessage(), e);
+                }
+
+            }
+
+            if (fos != null) {
+                try {
+                    fos.close();
+                } catch (IOException e) {
+                    throw new RuntimeException(e.getMessage(), e);
                 }
             }
 
-            return newInstance;
-        } catch (InstantiationException e) {
-            throw new RuntimeException(e.getMessage(), e);
-        } catch (IllegalAccessException e) {
-            throw new RuntimeException(e.getMessage(), e);
+            Class<?> newClass = code.toClazz(cls.getClassLoader(), compiler, className, ClassHelper.getLastModifyTime(cls), fos);
+            System.out.println("build--------->" + cls);
+
+            try {
+                Codec<T> newInstance = (Codec<T>) newClass.newInstance();
+                if (!CACHED.containsKey(uniClsName)) {
+                    CACHED.put(uniClsName, newInstance);
+                }
+
+                try {
+                    // try to eagle load
+                    Set<Class<?>> relativeProxyClasses = cg.getRelativeProxyClasses();
+                    for (Class<?> relativeClass : relativeProxyClasses) {
+                        ProtobufProxy.create(relativeClass, debug, path, compiler, cg);
+                    }
+                } catch (Exception e) {
+                    if (LOGGER.isDebugEnabled()) {
+                        LOGGER.debug(e.getMessage(), e);
+                    }
+                }
+
+                return newInstance;
+            } catch (InstantiationException e) {
+                throw new RuntimeException(e.getMessage(), e);
+            } catch (IllegalAccessException e) {
+                throw new RuntimeException(e.getMessage(), e);
+            }
         }
+
     }
     
     /**
      * Load compiled class.
      *
      * @param <T> the generic type
+     * @param cls
      * @param uniClsName the uni cls name
      * @param className the class name
      * @return the codec
      */
-    private static <T> Codec<T> loadCompiledClass(String uniClsName, String className) {
+    private static <T> Codec<T> loadCompiledClass(Class<T> cls, String uniClsName, String className) {
         Class<?> c = null;
         try {
             c = Class.forName(className, true, getClassLoader());
@@ -449,6 +481,20 @@ public final class ProtobufProxy {
                 c = null;
             }
         }
+
+        long version = getVersion(cls);
+        CACHE_VERSION.set(version);
+
+        if (version != 0) {
+            if (c != null) {
+                IVersion iVersion = c.getAnnotation(IVersion.class);
+                long proxyVersion = iVersion == null ? 0 : iVersion.value();
+                if (proxyVersion != version) {
+                    c = null;
+                }
+            }
+        }
+
 
         if (c != null) {
             try {
@@ -465,6 +511,18 @@ public final class ProtobufProxy {
         }
         
         return null;
+    }
+
+    private static long getVersion(Class srcClass) {
+        //获取class文件版本
+        try {
+            URL resource = srcClass.getResource(srcClass.getSimpleName() + ".class");
+            Path path = Paths.get(resource.toURI());
+            return path.toFile().lastModified();
+        } catch (URISyntaxException e) {
+            e.printStackTrace();
+        }
+        return 0;
     }
 
     /**

@@ -59,7 +59,6 @@ public abstract class AbstractCodeGenerator implements ICodeGenerator {
     /**
      * Instantiates a new abstract code generator.
      *
-     * @param fields the fields
      * @param cls the cls
      */
     public AbstractCodeGenerator(Class<?> cls) {

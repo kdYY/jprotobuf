@@ -45,7 +45,8 @@ import com.google.protobuf.Descriptors.Descriptor;
  * 
  * @author xiemalin
  * @since 1.0.0
- */ 
+ */
+@Deprecated
 public class CodeGenerator extends AbstractCodeGenerator {
 
     /** The Constant JAVA_CLASS_FILE_SUFFIX. */
@@ -89,9 +90,9 @@ public class CodeGenerator extends AbstractCodeGenerator {
      * @see com.baidu.bjf.remoting.protobuf.code.ICodeGenerator#getCode()
      */
     @Override
-    public String getCode() {
+    public Code getCode() {
         ClassCode code = getClassCode();
-        return code.toCode();
+        return Code.stringCode(code.toString());
     }
     
     /**

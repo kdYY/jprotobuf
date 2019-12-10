@@ -76,7 +76,7 @@ public interface ICodeGenerator {
      *
      * @return the code
      */
-    String getCode();
+    Code getCode();
 
     /**
      * Gets the relative proxy classes.
